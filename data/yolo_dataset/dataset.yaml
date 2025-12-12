@@ -1,0 +1,17 @@
+names:
+- company_name
+- company_acn_arsn
+- substantial_holder_name
+- holder_acn_arsn
+- change_date
+- previous_notice_dated
+- previous_notice_given
+- class_of_securities
+- previous_notice_persons_votes
+- previous_notice_voting_power
+- present_notice_persons_votes
+- present_notice_voting_power
+nc: 12
+path: /data/yolo_dataset
+train: images/train
+val: images/val

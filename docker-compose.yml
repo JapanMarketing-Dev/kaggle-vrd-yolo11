@@ -1,0 +1,15 @@
+services:
+  yolo:
+    build: .
+    image: vrd-yolo
+    container_name: vrd-yolo
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ./workspace:/workspace
+      - ./data:/data
+      - ./outputs:/outputs
+    ipc: host
+    stdin_open: true
+    tty: true
