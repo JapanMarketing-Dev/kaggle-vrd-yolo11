@@ -321,3 +321,133 @@ docker run --gpus all --rm \
 | **精度** | MAP@0.5: 98.3%（904件中889件成功） |
 | **速度** | 1画像あたり0.01秒 |
 | **Kaggle順位相当** | 上位レベル（1位: 98.9%） |
+
+---
+
+## 🇯🇵 応用例：印鑑登録申請書の情報抽出
+
+本アプローチは **日本の行政書類** にも適用可能です。以下は印鑑登録申請書への応用例です。
+
+### 対象書類
+
+**印鑑登録申請書**（市区町村役所で使用される公的書類）
+
+### 抽出対象フィールド（検出クラス）
+
+| Class ID | フィールド名 | 説明 |
+|----------|-------------|------|
+| 0 | 氏名 | 申請者の氏名 |
+| 1 | フリガナ | 氏名のフリガナ |
+| 2 | 生年月日 | 申請者の生年月日 |
+| 3 | 住所 | 申請者の住所 |
+| 4 | 電話番号 | 連絡先電話番号 |
+| 5 | 届出印 | 登録する印鑑の印影 |
+| 6 | 申請日 | 申請書の提出日 |
+| 7 | 届出区分 | 新規登録・変更・廃止 等 |
+| 8 | 本人確認書類 | 提示した身分証明書の種類 |
+| 9 | 委任者情報 | 代理申請時の委任者情報 |
+
+### 導入手順
+
+#### Step 1: アノテーションデータの作成
+
+```bash
+# LabelImg等でアノテーション（YOLO形式で出力）
+pip install labelImg
+labelImg
+```
+
+アノテーション形式（1画像につき1つの `.txt` ファイル）：
+```
+# class_id x_center y_center width height（すべて0-1に正規化）
+0 0.25 0.15 0.30 0.04    # 氏名
+1 0.25 0.19 0.30 0.03    # フリガナ
+2 0.75 0.15 0.20 0.04    # 生年月日
+...
+```
+
+#### Step 2: dataset.yaml の作成
+
+```yaml
+# /data/inkan_dataset/dataset.yaml
+path: /data/inkan_dataset
+train: images/train
+val: images/val
+
+names:
+  0: name              # 氏名
+  1: furigana          # フリガナ
+  2: birth_date        # 生年月日
+  3: address           # 住所
+  4: phone             # 電話番号
+  5: seal_impression   # 届出印
+  6: application_date  # 申請日
+  7: application_type  # 届出区分
+  8: id_document       # 本人確認書類
+  9: delegator_info    # 委任者情報
+
+nc: 10  # クラス数
+```
+
+#### Step 3: 学習の実行
+
+```bash
+docker run --gpus all --rm \
+  -v $(pwd)/workspace:/workspace \
+  -v $(pwd)/data:/data \
+  -v $(pwd)/outputs:/outputs \
+  --ipc=host \
+  vrd-yolo \
+  python /workspace/train.py \
+    --model yolo11l.pt \
+    --data /data/inkan_dataset/dataset.yaml \
+    --epochs 100 \
+    --imgsz 1024 \
+    --batch 8 \
+    --device 0 \
+    --name inkan_yolo11
+```
+
+#### Step 4: 推論の実行
+
+```python
+from ultralytics import YOLO
+
+# モデルの読み込み
+model = YOLO("/outputs/inkan_yolo11/weights/best.pt")
+
+# 推論
+results = model.predict(
+    source="申請書画像.png",
+    conf=0.25,
+    save=True
+)
+
+# 結果の取得
+for result in results:
+    for box in result.boxes:
+        class_id = int(box.cls)
+        confidence = float(box.conf)
+        x1, y1, x2, y2 = box.xyxy[0].tolist()
+        print(f"クラス: {class_id}, 信頼度: {confidence:.2f}, 座標: ({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f})")
+```
+
+### 期待される精度
+
+| 条件 | 期待MAP@0.5 |
+|------|-------------|
+| 学習データ 100枚以上 | 90%+ |
+| 学習データ 500枚以上 | 95%+ |
+| 学習データ 1000枚以上 | 98%+ |
+
+> 💡 **ポイント**: 印鑑登録申請書は市区町村ごとにフォーマットが異なります。
+> 複数の自治体のフォーマットを学習データに含めることで、汎用性が向上します。
+
+### 追加の考慮事項
+
+| 項目 | 対応方法 |
+|------|----------|
+| **手書き文字** | Data Augmentationで手書き風ノイズを追加 |
+| **印影の検出** | 赤色領域の検出精度向上のため、色空間変換を前処理に追加 |
+| **複数ページ** | ページごとに処理し、結果を統合 |
+| **個人情報保護** | 推論後のデータは暗号化・アクセス制限を実施 |
